@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grafismo Andalucía</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+</head>
+
+<body class="bg-gray-100">
+
+<div id="login" class="flex items-center justify-center min-h-screen">
+  <button onclick="login()" class="bg-blue-600 text-white px-6 py-3 rounded">
+    Login con Google
+  </button>
+</div>
+
+<div id="root" style="display:none;"></div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyBLWoP6iO_2rPg5PyjN_l97JQvTkAY4qLo",
+  authDomain: "grafismo-andalucia.firebaseapp.com",
+  projectId: "grafismo-andalucia",
+  storageBucket: "grafismo-andalucia.firebasestorage.app",
+  messagingSenderId: "519037992229",
+  appId: "1:519037992229:web:1e70e04e2c7cf5cdd9eecc",
+  measurementId: "G-8HJ4PLV3ZK"
+};
+
+firebase.initializeApp(firebaseConfig);
+
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+function login(){
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider);
+}
+
+auth.onAuthStateChanged(user=>{
+  if(user){
+    document.getElementById("login").style.display="none";
+    document.getElementById("root").style.display="block";
+    window.startApp(user);
+  }
+});
+
+// 👉 URL de tu AppScript
+const UPLOAD_URL = "https://script.google.com/macros/s/AKfycbwLcVrQC6KgwfwNQuQiI4NqabyplIg8lPW40bBNz3QM6eUC9pFYox50jrZQtSg7i5zEMw/exec";
+</script>
+
+<script type="text/babel">
+
+const { useState, useEffect } = React;
+
+function App({ user }) {
+
+  const [elements, setElements] = useState([]);
+  const [text, setText] = useState("");
+  const [file, setFile] = useState(null);
+
+  useEffect(()=>{
+    return db.collection("grafismo")
+      .orderBy("timestamp","desc")
+      .onSnapshot(snap=>{
+        setElements(snap.docs.map(d=>({id:d.id,...d.data()})));
+      });
+  },[]);
+
+  // 📤 subir a Drive
+  const uploadToDrive = async (file) => {
+    const base64 = await toBase64(file);
+
+    const formData = new URLSearchParams();
+    formData.append("file", base64.split(",")[1]);
+    formData.append("type", file.type);
+    formData.append("name", file.name);
+
+    const res = await fetch(UPLOAD_URL, {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await res.json();
+    return data.url;
+  };
+
+  const toBase64 = file => new Promise((res, rej)=>{
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = ()=>res(reader.result);
+    reader.onerror = err=>rej(err);
+  });
+
+  const save = async () => {
+    let imageUrl = "";
+
+    if(file){
+      imageUrl = await uploadToDrive(file);
+    }
+
+    await db.collection("grafismo").add({
+      text,
+      imageUrl,
+      user: user.email,
+      timestamp: Date.now()
+    });
+
+    setText("");
+    setFile(null);
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto p-6">
+
+      <h1 className="text-3xl font-bold mb-6">
+        Grafismo Andalucía
+      </h1>
+
+      <div className="bg-white p-4 rounded shadow mb-6">
+        <input
+          value={text}
+          onChange={e=>setText(e.target.value)}
+          className="border p-2 w-full mb-2"
+          placeholder="Texto"
+        />
+
+        <input type="file" onChange={e=>setFile(e.target.files[0])} />
+
+        <button onClick={save} className="bg-green-600 text-white px-4 py-2 mt-2 rounded">
+          Guardar
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {elements.map(el=>(
+          <div key={el.id} className="bg-white p-4 rounded shadow">
+            <p>{el.text}</p>
+            {el.imageUrl && <img src={el.imageUrl} className="mt-2"/>}
+          </div>
+        ))}
+      </div>
+
+    </div>
+  );
+}
+
+window.startApp = (user)=>{
+  ReactDOM.createRoot(document.getElementById("root"))
+    .render(<App user={user}/>);
+};
+
+</script>
+
+</body>
+</html>
